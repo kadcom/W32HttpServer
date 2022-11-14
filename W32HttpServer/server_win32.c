@@ -3,7 +3,7 @@
 #include "logging.h"
 #include "main_window_handlers.h"
 
-BOOL g_is_server_run = FALSE;
+volatile LONG g_is_server_run = FALSE;
 SOCKET ssocket = INVALID_SOCKET;
 
 static DWORD WINAPI listener_thread_proc(LPVOID param);

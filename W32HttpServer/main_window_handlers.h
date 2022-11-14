@@ -17,7 +17,7 @@ extern HWND g_main_window;
 extern HWND g_server_log_window;
 extern HWND g_request_log_window;
 
-extern BOOL g_is_server_run;
+extern volatile LONG g_is_server_run;
 extern SOCKET ssocket;
 
 /* Window Message to send to main thread */

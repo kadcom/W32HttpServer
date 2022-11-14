@@ -177,13 +177,13 @@ LRESULT on_initialise(HWND window, HINSTANCE current_instance) {
 }
 
 void set_button_server_status(HWND button, BOOL started) {
-	SetWindowLong(button, GWL_USERDATA, started);
+	SetWindowLongPtr(button, GWLP_USERDATA, started);
 	SetWindowText(button, started ? "Stop Listening": "Start Listening");
 }
 
 LRESULT on_start_click(HWND window, HWND button) {
 
-	BOOL started = GetWindowLong(button, GWL_USERDATA);
+	BOOL started = (BOOL) GetWindowLongPtr(button, GWLP_USERDATA);
 	struct server_config_t cfg;
 
 	int listen_port = 8080;
