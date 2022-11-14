@@ -39,16 +39,17 @@ Other than making a point that programmer nowadays needs beefy computer just to 
 
 I plan to add enhancements
 
-[ ] Multiple client using thread.
-[ ] Windows 9x vs NT detection.
-[ ] HTTP 1.0 compliant. 
-[ ] JSON parser.
-[ ] Thread pool with semaphore for Win9x. 
-[ ] Thread pool with IO Completion Ports for Windows NT.
-[ ] Better UI design.
-[ ] Ability to be run as a Windows Service.
-[ ] Ability to dynamically dispatch function in DLL as HTTP Handler. CGI be damned.
-[ ] Portability on the socket part with Linux and macOS. 
+- [ ] Multiple client using thread.
+- [ ] Windows 9x vs NT detection.
+- [ ] HTTP 1.0 compliant.
+- [ ] TLS 1.2 with mbedTLS.
+- [ ] JSON parser.
+- [ ] Thread pool with semaphore for Win9x. 
+- [ ] Thread pool with IO Completion Ports for Windows NT.
+- [ ] Better UI design.
+- [ ] Ability to be run as a Windows Service.
+- [ ] Ability to dynamically dispatch function in DLL as HTTP Handler. CGI be damned.
+- [ ] Portability on the socket part with Linux and macOS. 
 
 When will those be done? I don't know. If you feel like it, please contribute.
 The only hard requirement is this program should be able to run on
