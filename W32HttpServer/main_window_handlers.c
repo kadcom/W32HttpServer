@@ -66,11 +66,15 @@ LRESULT on_initialise(HWND window, HINSTANCE current_instance) {
 	RECT parentRect;
 	int parentWidth;
 	HWND ctrl;
+	HWND frame;
+	HICON head_icon;
 
 #define margin 10
 
 	GetClientRect(window, &parentRect);
 	parentWidth = parentRect.right - parentRect.left;
+
+	head_icon = LoadIcon(current_instance, MAKEINTRESOURCE(IDI_HEAD));
 
 	/* Build the whole UI */
 
@@ -170,6 +174,49 @@ LRESULT on_initialise(HWND window, HINSTANCE current_instance) {
 		window, 
 		(HMENU) IDC_START_BUTTON, 
 		current_instance, 
+		NULL);
+	SendMessage(ctrl, WM_SETFONT, (WPARAM) g_sans_font, 0);
+
+	ctrl = CreateWindowEx(
+		0,
+		"STATIC", "",
+		WS_CHILD | WS_VISIBLE | SS_SUNKEN,
+		40 * margin,
+		27 * margin,
+		350,
+		48,
+		window,
+		NULL,
+		current_instance,
+		NULL);
+
+	frame = ctrl;
+	
+	ctrl = CreateWindowEx(
+		0,
+		"STATIC", "",
+		WS_CHILD | WS_VISIBLE | SS_ICON,
+		8,
+		8,
+		32,
+		32,
+		frame,
+		NULL,
+		current_instance,
+		NULL);
+	SendMessage(ctrl, STM_SETIMAGE, IMAGE_ICON, (LPARAM) head_icon);
+
+	ctrl = CreateWindowEx(
+		0,
+		"STATIC", "Simple HTTP Server by Didiet Noor\nhttp://www.retrocoding.net",
+		WS_CHILD | WS_VISIBLE,
+		52,
+		8,
+		250,
+		32,
+		frame,
+		NULL,
+		current_instance,
 		NULL);
 	SendMessage(ctrl, WM_SETFONT, (WPARAM) g_sans_font, 0);
 

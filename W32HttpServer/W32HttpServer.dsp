@@ -93,6 +93,14 @@ SOURCE=.\common.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\head.ico
+# End Source File
+# Begin Source File
+
+SOURCE=.\http.ico
+# End Source File
+# Begin Source File
+
 SOURCE=.\logging.c
 # End Source File
 # Begin Source File
