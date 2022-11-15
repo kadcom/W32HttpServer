@@ -21,7 +21,7 @@ int WINAPI WinMain(HINSTANCE current_instance,
 	HICON app_icon;
 	HCURSOR app_cursor;
 	HBRUSH background_colour;
-	BOOL is_wc_registered, is_message_exists;
+	BOOL is_wc_registered = FALSE;
 
 	// These is to adjust the window UI
 	int screen_width, screen_height;
@@ -121,12 +121,7 @@ int WINAPI WinMain(HINSTANCE current_instance,
 	UpdateWindow(g_main_window);
 	
 	// Let's pump the messages for the main window
-	while( (is_message_exists = GetMessage(&msg, g_main_window, 0, 0)) != 0) {
-		if (is_message_exists < 0) {
-			MessageBox(NULL, "Error when processing window message!", "Error", MB_ICONSTOP);
-			break;
-		}
-
+	while(GetMessage(&msg, g_main_window, 0, 0) > 0) {
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}

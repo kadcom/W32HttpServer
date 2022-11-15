@@ -133,7 +133,7 @@ SOURCE=.\server_win32.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\W32HttpServer.rc
+SOURCE=.\w32httpd.rc
 # End Source File
 # End Target
 # End Project
