@@ -1,0 +1,46 @@
+#include "resource.h"
+
+// Icon Resource
+
+IDI_HTTP                ICON                    "http.ico"
+IDI_HEAD                ICON                    "head.ico"
+
+// Version Information
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x17L
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x0L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "000004b0"
+        BEGIN
+            VALUE "CompanyName", "Retrocoding.NET"
+            VALUE "FileDescription", "Windows HTTP Daemon"
+            VALUE "FileVersion", "1, 0, 0, 1"
+            VALUE "InternalName", "w32httpd"
+            VALUE "LegalCopyright", "Copyright (C) 2022 Retrocoding.net"
+            VALUE "OriginalFilename", "W32HTTPD"
+            VALUE "ProductName", "W32HTTPD"
+            VALUE "ProductVersion", "1, 0, 0, 1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x809, 1200
+    END
+END
+
+STRINGTABLE 
+BEGIN
+    IDS_MAIN_WINDOW_TITLE   "Simple Windows-Based Socket Server"
+END

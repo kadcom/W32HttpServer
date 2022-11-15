@@ -235,7 +235,7 @@
 				>
 			</File>
 			<File
-				RelativePath=".\W32HttpServer.rc"
+				RelativePath=".\w32httpd.rc"
 				>
 			</File>
 		</Filter>
