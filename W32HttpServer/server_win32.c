@@ -24,7 +24,7 @@ int start_server(struct server_config_t *cfg)
 	cfg->lock = CreateEvent(NULL, TRUE, FALSE, NULL);
 	init_log(cfg->main_window);
 
-	snprintf(startup_message, sizeof(startup_message) - 1, "Server running at port %d", cfg->listen_port);
+	StringCchPrintf(startup_message, sizeof(startup_message) - 1, "Server running at port %d", cfg->listen_port);
 	print_log(LOG_SERVER, startup_message);
 
 	listener_thread = CreateThread(NULL, 0, listener_thread_proc, cfg, 0, &listener_thread_id);
@@ -60,7 +60,7 @@ static SOCKET make_socket(const char *listen_addr, u16 nport, struct addrinfo **
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 
-	snprintf(port, sizeof(port)-1, "%d", nport);
+	StringCchPrintf(port, sizeof(port)-1, "%d", nport);
 
 	getaddrinfo(listen_addr, port, &hints, pserv_info);
 

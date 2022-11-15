@@ -9,6 +9,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <ws2tcpip.h>
+#include <strsafe.h>
 #include <stdio.h>
 
 #ifndef snprintf
