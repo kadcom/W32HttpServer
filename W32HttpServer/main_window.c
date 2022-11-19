@@ -52,7 +52,7 @@ int WINAPI WinMain(HINSTANCE current_instance,
 	wcex.hInstance		= current_instance;
 	wcex.lpfnWndProc	= main_window_procedure;
 	wcex.lpszClassName  = g_main_window_class_name;
-	
+
 	is_wc_registered = RegisterClassEx(&wcex);
 
 	if (!is_wc_registered) {

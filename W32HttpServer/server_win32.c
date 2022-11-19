@@ -2,6 +2,8 @@
 #include "server.h"
 #include "logging.h"
 #include "main_window_handlers.h"
+#include "server_http.h"
+#include <strsafe.h>
 
 volatile LONG g_is_server_run = FALSE;
 SOCKET ssocket = INVALID_SOCKET;
@@ -29,7 +31,6 @@ int start_server(struct server_config_t *cfg)
 
 	listener_thread = CreateThread(NULL, 0, listener_thread_proc, cfg, 0, &listener_thread_id);
 	WaitForSingleObject(cfg->lock, INFINITE);
-
 	return 0;
 };
 
@@ -102,6 +103,7 @@ static SOCKET make_socket(const char *listen_addr, u16 nport) {
 
 // the most important part
 // TODO: make it portable
+// TODO: make handlers
 void run_server(struct server_config_t *cfg) {
 	int backlog = 10;
 	int addr_size;
@@ -123,6 +125,8 @@ void run_server(struct server_config_t *cfg) {
 	WORD wsa_version = MAKEWORD(2,2);
 	SYSTEM_INFO sys_info;
 	WSAStartup(wsa_version, &wsa);
+
+  struct http_request_t req;
 
 	GetSystemInfo(&sys_info);
 	buf = VirtualAlloc(NULL, sys_info.dwPageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
@@ -161,6 +165,7 @@ void run_server(struct server_config_t *cfg) {
 		// dump request
 		print_log(LOG_REQUEST, buf);
 
+#if 0
 		// parse request
 		for (end_method = buf; *end_method != 0x20; ++end_method);
 		// run until space; do nothing
@@ -171,6 +176,15 @@ void run_server(struct server_config_t *cfg) {
 			closesocket(csocket);
 			continue;
 		}
+#endif
+    parse_http_request(buf, (cursor - buf), &req);
+
+    if (req.method == HTTP_GET)  {
+      send(csocket, canned_error_response, sizeof(canned_error_response) - 1, 0);
+			closesocket(csocket);
+			continue;
+    }
+
 
 		send(csocket, canned_success_response, sizeof(canned_success_response) - 1, 0);
 		closesocket(csocket);
