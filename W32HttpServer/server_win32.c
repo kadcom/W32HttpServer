@@ -116,17 +116,16 @@ void run_server(struct server_config_t *cfg) {
 	SOCKET csocket;
 #define MTU 1024
 	int recv_len;
-	size_t end_method_len;
 	u8 recv_buf[MTU] = {0};
-	u8 *buf, *cursor, *end_method;
+	u8 *buf, *cursor;
 	u32 *end_message;
+	struct http_request_t req;
 
 	WSADATA wsa;
 	WORD wsa_version = MAKEWORD(2,2);
 	SYSTEM_INFO sys_info;
 	WSAStartup(wsa_version, &wsa);
 
-  struct http_request_t req;
 
 	GetSystemInfo(&sys_info);
 	buf = VirtualAlloc(NULL, sys_info.dwPageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);

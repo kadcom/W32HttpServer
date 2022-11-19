@@ -129,6 +129,14 @@ SOURCE=.\server.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\server_http.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\server_http.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\server_win32.c
 # End Source File
 # Begin Source File

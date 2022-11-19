@@ -20,7 +20,7 @@ static BOOL ascii_compare (u8 c1, u8 c2) {
 
 static BOOL nocase_compare(const char *str1, const char *str2, const size_t n) {
   u8 *ptr1 = (u8*)str1;
-  u8 *ptr2 = (u8*)ptr2;
+  u8 *ptr2 = (u8*)str2;
   size_t i; 
   
   if ( 0 == n ) {
@@ -40,7 +40,8 @@ static BOOL nocase_compare(const char *str1, const char *str2, const size_t n) {
 static enum http_method_t parse_method(const u8 *payload, u8 **path_ptr) {
   u8 *method_end;
   u32 compare_len;
-  int i;
+  enum http_method_t method;
+  size_t i;
 
   for(method_end = (u8*) payload; *method_end != ' '; ++method_end) {
     // just go through
@@ -53,8 +54,9 @@ static enum http_method_t parse_method(const u8 *payload, u8 **path_ptr) {
   compare_len = method_end - payload;
 
   for(i = 0; i < http_method_map_n; ++i) {
-    if (nocase_compare(method_map[i].method_str, (const char*)payload, compare_len) == 0) {
-      return method_map[i].method_num;
+    if (strnicmp(method_map[i].method_str, (const char*)payload, compare_len) == 0) {
+      method =  method_map[i].method_num;
+	  break;
     }
   }
 
@@ -62,7 +64,7 @@ static enum http_method_t parse_method(const u8 *payload, u8 **path_ptr) {
     *path_ptr = method_end + 1; 
   }
   
-  return HTTP_UNKNOWN;
+  return method;
 }
 
 static struct http_path_t parse_path(const u8 *method_ptr, u8 **http_version_ptr) {
@@ -85,7 +87,7 @@ int parse_http_request(
     size_t payload_len, 
     struct http_request_t *req_output)
 {
-  u8 *ptr;
+  u8 *ptr, *next_ptr;
   if (NULL == req_output) {
     return -1; 
   }
@@ -95,7 +97,9 @@ int parse_http_request(
   req_output->payload = payload;
   req_output->payload_len = payload_len;
   req_output->method = parse_method(payload, &ptr);
-  req_output->path = parse_path(ptr, &ptr);
+  req_output->path = parse_path(ptr, &next_ptr);
+
+  ptr = next_ptr;
 
   /* find header start */
   for (ptr = payload; *ptr != '\n'; ++ptr);
