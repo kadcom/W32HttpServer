@@ -146,11 +146,14 @@ void run_server(struct server_config_t *cfg) {
 		if (csocket == SOCKET_ERROR) {
 			break;
 		}
-		print_log(LOG_SERVER, ">> Client is connected");
-		cursor = buf;
+
+    log_printf(LOG_SERVER, "Client [0x%x] connected: %s:%d", (size_t)csocket,
+        inet_ntoa(client_addr.sin_addr), client_addr.sin_port); 
+		
+    cursor = buf;
 
 		for(;;) {
-			recv_len = recv(csocket, recv_buf, MTU, 0);
+			recv_len = recv(csocket, (char*) recv_buf, MTU, 0);
 			CopyMemory(buf, recv_buf, recv_len);
 			cursor += recv_len;
 
@@ -162,21 +165,8 @@ void run_server(struct server_config_t *cfg) {
 		}
 		*cursor = 0; // null end of buffer
 		// dump request
-		print_log(LOG_REQUEST, buf);
-
-#if 0
-		// parse request
-		for (end_method = buf; *end_method != 0x20; ++end_method);
-		// run until space; do nothing
-		end_method_len = end_method - buf;
-
-		if(strnicmp("GET", buf, end_method_len) != 0) {
-			send(csocket, canned_error_response, sizeof(canned_error_response) - 1, 0);
-			closesocket(csocket);
-			continue;
-		}
-#endif
-		parse_http_request(buf, (cursor - buf), &req);
+		print_log(LOG_REQUEST, (char*) buf);
+    parse_http_request(buf, (cursor - buf), &req);
 
 		switch(req.method){
 		case HTTP_GET:
@@ -186,6 +176,10 @@ void run_server(struct server_config_t *cfg) {
 			send(csocket, canned_error_response, sizeof(canned_error_response) - 1, 0);
 			break;
 		}
+
+    log_printf(LOG_SERVER, "Client [0x%x] closed: %s:%d", (size_t)csocket,
+        inet_ntoa(client_addr.sin_addr), client_addr.sin_port); 
+		
 		closesocket(csocket);
 	}
 

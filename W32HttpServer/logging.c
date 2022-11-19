@@ -1,6 +1,7 @@
 #include "common.h"
 #include "logging.h"
 #include "main_window_handlers.h"
+#include <strsafe.h>
 
 static HWND g_parent_log = NULL;
 
@@ -22,4 +23,15 @@ void print_log(log_kind_t kind, char *str) {
 		msg = W32HTTP_SERVERLOG;
 	}
 	SendNotifyMessage(g_parent_log, msg, 0, (LPARAM) str);
+}
+
+void log_printf(log_kind_t kind, char *fmt, ...) {
+  char buf[1024] = {0};
+  va_list args = NULL;
+  va_start(args, fmt);
+
+  StringCchVPrintf(buf, sizeof(buf) - 1, fmt, args);
+  va_end(args);
+
+  print_log(kind, buf);
 }
