@@ -191,6 +191,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\server_http.c"
+				>
+			</File>
+			<File
 				RelativePath=".\server_win32.c"
 				>
 			</File>
@@ -218,6 +222,10 @@
 			</File>
 			<File
 				RelativePath=".\server.h"
+				>
+			</File>
+			<File
+				RelativePath=".\server_http.h"
 				>
 			</File>
 		</Filter>

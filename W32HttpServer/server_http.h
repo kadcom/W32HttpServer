@@ -2,6 +2,8 @@
 #define W32HTTP_HTTP_H
 #include "common.h"
 
+#define MAXIMUM_HEADER_SIZE (8 * 1024);
+
 enum http_method_t {
   HTTP_UNKNOWN = 0,
   HTTP_GET,
@@ -18,6 +20,12 @@ struct http_header_t {
 struct http_path_t {
   const u8 *start; 
   const u8 *end;
+};
+
+struct http_header_item_t {
+  const u8 *start;
+  const u8 *end;
+  const u8 *value;
 };
 
 struct http_request_t {
