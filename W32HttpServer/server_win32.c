@@ -10,9 +10,11 @@ SOCKET ssocket = INVALID_SOCKET;
 
 static DWORD WINAPI listener_thread_proc(LPVOID param);
 static void run_server(struct server_config_t *cfg);
+static int handle_post(SOCKET csocket, struct http_request_t *req);
 
 char canned_success_response[] = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nHello,World\r\n\r\n";
-char canned_error_response[] = "HTTP/1.0 501 Unsupported method\r\nContent-Type: text/plain\r\n\r\nUnsupported method\r\n\r\n";
+char canned_unsupported_response[] = "HTTP/1.0 501 Not Implemented\r\nContent-Type: text/plain\r\n\r\nUnsupported method\r\n\r\n";
+char canned_error_response[] = "HTTP/1.0 405 Method Not Allowed\r\nContent-Type: text/plain\r\n\r\nCannot use this method, lah!\r\n\r\n";
 
 int start_server(struct server_config_t *cfg) 
 {
@@ -169,6 +171,11 @@ void run_server(struct server_config_t *cfg) {
     parse_http_request(buf, (cursor - buf), &req);
 
 		switch(req.method){
+    case HTTP_POST:
+      if ( handle_post(csocket, &req) < 0) {
+        send(csocket, canned_unsupported_response, sizeof(canned_unsupported_response) - 1, 0);
+      }
+      break;
 		case HTTP_GET:
 			send(csocket, canned_success_response, sizeof(canned_success_response) - 1, 0);			
 			break;
@@ -186,4 +193,8 @@ void run_server(struct server_config_t *cfg) {
 	VirtualFree(buf, 0, MEM_RELEASE);
 	closesocket(ssocket);
 	WSACleanup();
+}
+
+int handle_post(SOCKET csocket, struct http_request_t *req) {
+  return -1;  
 }

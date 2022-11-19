@@ -26,6 +26,7 @@ struct http_header_item_t {
   const u8 *start;
   const u8 *end;
   const u8 *value;
+  const u8 *_next; 
 };
 
 struct http_request_t {
@@ -39,7 +40,7 @@ struct http_request_t {
   size_t payload_len;
 };
 
-size_t find_header(struct http_header_t *hdr, const char *header_name, const char *buf, const size_t buf_len);
+struct http_header_item_t find_header(struct http_header_t *hdr, const char *header_name);
 int parse_http_request(u8 *payload, size_t payload_len, struct http_request_t *req_output);
 
 #endif // 

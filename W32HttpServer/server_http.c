@@ -112,4 +112,39 @@ int parse_http_request(
   return 0;
 }
 
+struct http_header_item_t find_header(struct http_header_t *hdr, const char *header_name) {
+  size_t hdr_key_len = strlen(header_name);
+  struct http_header_item_t item;
+  int ret, i;
+  const u8 *ptr;
+
+  memset(&item, 0, sizeof(struct http_header_item_t));
+
+  item.start = hdr->start;
+  do {
+
+    ret = strnicmp((const char*) item.start, header_name, hdr_key_len);
+
+    if (ret != 0) {
+       // skip the whole line
+       for(ptr = item.start; *ptr != '\n'; ++ptr); // find '\r\n'
+       item.start = ptr + 1;
+       continue;
+    }
+    
+    for(ptr = item.start; *ptr != ':'; ++ptr); // find ':'
+    for(; *ptr == '\t' || *ptr == ' '; ++ptr); // skip spaces 
+    item.value = ptr;
+    for(; *ptr != '\n'; ++ptr); // find '\r\n'      item.end   = ptr - 1;
+ 
+  } while (ret != 0 || ptr == hdr->end || ptr + 1 == hdr->end);
+
+  if (item.value == 0) {
+    item.start = 0;
+  }
+
+  return item;
+}
+
+
 
