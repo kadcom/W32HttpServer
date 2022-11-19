@@ -170,25 +170,24 @@ void run_server(struct server_config_t *cfg) {
 		// run until space; do nothing
 		end_method_len = end_method - buf;
 
-		if(strncmp("GET", buf, end_method_len) != 0) {
+		if(strnicmp("GET", buf, end_method_len) != 0) {
 			send(csocket, canned_error_response, sizeof(canned_error_response) - 1, 0);
 			closesocket(csocket);
 			continue;
 		}
 #endif
-    parse_http_request(buf, (cursor - buf), &req);
+		parse_http_request(buf, (cursor - buf), &req);
 
-    if (req.method == HTTP_GET)  {
-      send(csocket, canned_error_response, sizeof(canned_error_response) - 1, 0);
-			closesocket(csocket);
-			continue;
-    }
-
-
-		send(csocket, canned_success_response, sizeof(canned_success_response) - 1, 0);
+		switch(req.method){
+		case HTTP_GET:
+			send(csocket, canned_success_response, sizeof(canned_success_response) - 1, 0);			
+			break;
+		default:
+			send(csocket, canned_error_response, sizeof(canned_error_response) - 1, 0);
+			break;
+		}
 		closesocket(csocket);
 	}
-
 
 	VirtualFree(buf, 0, MEM_RELEASE);
 	closesocket(ssocket);
