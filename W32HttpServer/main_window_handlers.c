@@ -246,16 +246,15 @@ LRESULT on_start_click(HWND window, HWND button) {
 	cfg.listen_addr = "0.0.0.0"; // todo: configurable
 	cfg.listen_port = listen_port;
 	cfg.main_window = window;
+	cfg.max_clients = 10;     // default max clients
+	cfg.worker_threads = 4;   // default worker threads
 
 	if (!started) {
 		InterlockedIncrement(&g_is_server_run); // 0 -> 1
 		SendMessage(port_edit, WM_ENABLE, FALSE, 0);
 		start_server(&cfg);
 	} else {
-		if (ssocket != INVALID_SOCKET) {
-			closesocket(ssocket); // force thread to quit accepting
-		}
-		InterlockedDecrement(&g_is_server_run); // 1 -> 0
+		stop_server();
 		SendMessage(port_edit, WM_ENABLE, TRUE, 0);
 	}
 	started = !started;
