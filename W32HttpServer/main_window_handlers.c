@@ -1,13 +1,16 @@
 #include "common.h"
 #include "main_window_handlers.h"
 #include "server.h"
+#include <shlobj.h>
 
 LRESULT on_initialise(HWND window, HINSTANCE current_instance);
 LRESULT on_start_click(HWND window, HWND button);
+LRESULT on_folder_select_click(HWND window, HWND button);
 
 HWND g_server_log_window = NULL;
 HWND g_request_log_window = NULL;
 SOCKET g_server_socket = INVALID_SOCKET;
+static char g_document_root[MAX_PATH] = {0};
 
 static void scroll_to_bottom(HWND window) {
 	int min, max;
@@ -46,6 +49,8 @@ LRESULT CALLBACK main_window_procedure(HWND window, UINT message, WPARAM param16
 		switch(LOWORD(param16)) {
 		case IDC_START_BUTTON:
 			return on_start_click(window, (HWND) param32);
+		case IDC_FOLDER_BUTTON:
+			return on_folder_select_click(window, (HWND) param32);
 		default:
 			break;
 		};
@@ -163,12 +168,55 @@ LRESULT on_initialise(HWND window, HINSTANCE current_instance) {
 		NULL);
 	SendMessage(ctrl, WM_SETFONT, (WPARAM) g_sans_font, 0);
 
+	/* Folder selection controls */
+	ctrl = CreateWindowEx(
+		0,
+		"STATIC", "Folder to serve",
+		WS_CHILD | WS_VISIBLE,
+		margin, 
+		29 * margin, 
+		20 * margin , 
+		(5 * margin)/2, 
+		window, 
+		NULL, 
+		current_instance, 
+		NULL);
+	SendMessage(ctrl, WM_SETFONT, (WPARAM) g_sans_font, 0);
+
+	ctrl = CreateWindowEx(
+		0, 
+		"EDIT", "",
+		WS_BORDER | WS_CHILD | WS_VISIBLE | ES_LEFT | ES_READONLY,
+		margin, 
+		31 * margin, 
+		35 * margin , 
+		(5 * margin)/2, 
+		window, 
+		(HMENU) IDC_FOLDER_EDIT, 
+		current_instance, 
+		NULL);
+	SendMessage(ctrl, WM_SETFONT, (WPARAM) g_sans_font, 0);
+
+	ctrl = CreateWindowEx(
+		0, 
+		"BUTTON", "Browse...",
+		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+		37 * margin, 
+		31 * margin, 
+		10 * margin , 
+		(5 * margin)/2, 
+		window, 
+		(HMENU) IDC_FOLDER_BUTTON, 
+		current_instance, 
+		NULL);
+	SendMessage(ctrl, WM_SETFONT, (WPARAM) g_sans_font, 0);
+
 	ctrl = CreateWindowEx(
 		0, 
 		"BUTTON", "Start Listening",
 		WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
 		20 * margin, 
-		27 * margin, 
+		33 * margin, 
 		12 * margin , 
 		3 * margin, 
 		window, 
@@ -248,17 +296,66 @@ LRESULT on_start_click(HWND window, HWND button) {
 	cfg.main_window = window;
 	cfg.max_clients = 10;     // default max clients
 	cfg.worker_threads = 4;   // default worker threads
+	lstrcpy(cfg.document_root, g_document_root);
 
 	if (!started) {
+		/* Check if folder is selected */
+		if (g_document_root[0] == '\0') {
+			MessageBox(window, "Please select a folder to serve first.", "No Folder Selected", MB_ICONWARNING | MB_OK);
+			return 0;
+		}
+		
 		InterlockedIncrement(&g_is_server_run); // 0 -> 1
 		SendMessage(port_edit, WM_ENABLE, FALSE, 0);
+		SendMessage(GetDlgItem(window, IDC_FOLDER_BUTTON), WM_ENABLE, FALSE, 0);
 		start_server(&cfg);
 	} else {
 		stop_server();
 		SendMessage(port_edit, WM_ENABLE, TRUE, 0);
+		SendMessage(GetDlgItem(window, IDC_FOLDER_BUTTON), WM_ENABLE, TRUE, 0);
 	}
 	started = !started;
 	set_button_server_status(button, started);
+	
+	return 0;
+}
+
+LRESULT on_folder_select_click(HWND window, HWND button) {
+	BROWSEINFO browse_info;
+	LPITEMIDLIST item_id_list;
+	char selected_path[MAX_PATH];
+	HWND folder_edit;
+	
+	ZeroMemory(&browse_info, sizeof(BROWSEINFO));
+	ZeroMemory(selected_path, sizeof(selected_path));
+	
+	browse_info.hwndOwner = window;
+	browse_info.pszDisplayName = selected_path;
+	browse_info.lpszTitle = "Select folder to serve:";
+	browse_info.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+	
+	item_id_list = SHBrowseForFolder(&browse_info);
+	
+	if (item_id_list != NULL) {
+		if (SHGetPathFromIDList(item_id_list, selected_path)) {
+			/* Update the folder edit control */
+			folder_edit = GetDlgItem(window, IDC_FOLDER_EDIT);
+			if (folder_edit != NULL) {
+				SetWindowText(folder_edit, selected_path);
+				/* Store in global variable */
+				lstrcpy(g_document_root, selected_path);
+			}
+		}
+		
+		/* Free the memory allocated by SHBrowseForFolder */
+		{
+			LPMALLOC malloc_interface;
+			if (SUCCEEDED(SHGetMalloc(&malloc_interface))) {
+				malloc_interface->lpVtbl->Free(malloc_interface, item_id_list);
+				malloc_interface->lpVtbl->Release(malloc_interface);
+			}
+		}
+	}
 	
 	return 0;
 }

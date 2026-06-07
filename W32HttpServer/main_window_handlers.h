@@ -30,5 +30,7 @@ extern SOCKET ssocket;
 
 #define IDC_START_BUTTON (304)
 #define IDC_PORT_EDIT (305)
+#define IDC_FOLDER_BUTTON (306)
+#define IDC_FOLDER_EDIT (307)
 
 #endif /* W32HTTP_MAIN_WINDOW_HANDLERS_H */
