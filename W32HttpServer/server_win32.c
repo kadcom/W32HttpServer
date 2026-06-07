@@ -20,6 +20,8 @@ static void destroy_client_context(client_context_t *ctx);
 static void process_client_request(client_context_t *ctx);
 static int serve_http_request(client_context_t *ctx, struct http_request_t *req, char* out, u32 out_size, u32* out_len);
 static u32 stream_next_chunk(client_context_t *ctx, char* buf, u32 buf_size);
+static u32 dir_stream_next(client_context_t *ctx, char* buf, u32 buf_size);
+static void stream_close(client_context_t *ctx);
 static int send_all(SOCKET sock, const char* buf, u32 len);
 
 int start_server(struct server_config_t *cfg)
@@ -297,22 +299,39 @@ static client_context_t* create_client_context(SOCKET client_socket, SOCKADDR_IN
 	ctx->client_socket = client_socket;
 	ctx->client_addr = *client_addr;
 	ctx->bytes_received = 0;
+	/* No body is being streamed yet. Both OS handles start "empty" so the
+	   cleanup paths can tell open from closed. */
+	ctx->stream_kind = STREAM_NONE;
 	ctx->stream_file = INVALID_HANDLE_VALUE;
 	ctx->stream_remaining = 0;
-	ctx->is_streaming = 0;
+	ctx->dir_find = INVALID_HANDLE_VALUE;
+	ctx->dir_has_pending = 0;
 	ctx->next = NULL;
 
 	return ctx;
 }
 
+/* Release whatever OS resource is feeding the current response body (an open
+   file or a directory enumeration) and mark the context as no longer
+   streaming. Safe to call when nothing is streaming. */
+static void stream_close(client_context_t *ctx) {
+	if (ctx->stream_file != INVALID_HANDLE_VALUE && ctx->stream_file != NULL) {
+		CloseHandle(ctx->stream_file);
+		ctx->stream_file = INVALID_HANDLE_VALUE;
+	}
+	if (ctx->dir_find != INVALID_HANDLE_VALUE && ctx->dir_find != NULL) {
+		FindClose(ctx->dir_find);
+		ctx->dir_find = INVALID_HANDLE_VALUE;
+	}
+	ctx->dir_has_pending = 0;
+	ctx->stream_kind = STREAM_NONE;
+}
+
 static void destroy_client_context(client_context_t *ctx) {
 	if (ctx) {
-		/* Close any file still being streamed (e.g. client disconnected mid-send). */
-		if (ctx->stream_file != INVALID_HANDLE_VALUE && ctx->stream_file != NULL) {
-			CloseHandle(ctx->stream_file);
-			ctx->stream_file = INVALID_HANDLE_VALUE;
-		}
-		ctx->is_streaming = 0;
+		/* Close any in-flight stream first (e.g. the client disconnected
+		   before we finished sending the body). */
+		stream_close(ctx);
 		if (ctx->client_socket != INVALID_SOCKET) {
 			closesocket(ctx->client_socket);
 		}
@@ -390,18 +409,17 @@ static void process_client_request(client_context_t *ctx) {
 		} else {
 			/* Send headers (or the whole inline response). */
 			if (send_all(ctx->client_socket, head, head_len) == 0 && rc == 1) {
-				/* Stream the file body in fixed-size chunks straight from disk. */
+				/* rc == 1 means a body follows: pull it one chunk at a time
+				   (from a file or the directory generator) and send each chunk.
+				   This blocking loop is the Win9x worker-thread path. */
 				while ((n = stream_next_chunk(ctx, chunk, sizeof(chunk))) > 0) {
 					if (send_all(ctx->client_socket, chunk, n) != 0) {
 						break;
 					}
 				}
 			}
-			if (ctx->stream_file != INVALID_HANDLE_VALUE) {
-				CloseHandle(ctx->stream_file);
-				ctx->stream_file = INVALID_HANDLE_VALUE;
-			}
-			ctx->is_streaming = 0;
+			/* Release the file/dir handle backing the stream, if any. */
+			stream_close(ctx);
 		}
 	}
 	
@@ -486,7 +504,7 @@ void handle_recv_completion(iocp_pool_t *pool, client_context_t *ctx, DWORD byte
 	if (rc < 0) {
 		build_http_error_response(500, "Internal Server Error",
 			head, sizeof(head), &head_len);
-		ctx->is_streaming = 0;
+		stream_close(ctx); /* nothing should be streaming, but be defensive */
 	}
 
 	// Send headers (or the whole inline response). post_send copies `head` into
@@ -502,9 +520,10 @@ void handle_send_completion(iocp_pool_t *pool, client_context_t *ctx, DWORD byte
 		return;
 	}
 
-	// If a file body is in flight, post the next chunk and wait for its
-	// completion rather than closing the connection now.
-	if (ctx->is_streaming) {
+	// If a response body is in flight, post the next chunk and wait for its
+	// completion rather than closing the connection now. The body source may be
+	// a file or the on-the-fly directory listing; stream_next_chunk hides which.
+	if (ctx->stream_kind != STREAM_NONE) {
 		char chunk[HTTP_SEND_BUFFER_SIZE];
 		u32 n = stream_next_chunk(ctx, chunk, sizeof(chunk));
 		if (n > 0) {
@@ -513,12 +532,10 @@ void handle_send_completion(iocp_pool_t *pool, client_context_t *ctx, DWORD byte
 			}
 			// post_send failed: fall through to clean up and close.
 		}
-		// EOF (or send failure): close the file, then close the connection below.
-		if (ctx->stream_file != INVALID_HANDLE_VALUE) {
-			CloseHandle(ctx->stream_file);
-			ctx->stream_file = INVALID_HANDLE_VALUE;
-		}
-		ctx->is_streaming = 0;
+		// EOF (or send failure): release the stream, then close the connection
+		// below. For a directory listing the connection close is what tells the
+		// client the body is complete (no Content-Length was sent).
+		stream_close(ctx);
 	}
 
 	log_printf(LOG_SERVER, "Client [0x%x] response sent: %s:%d",
@@ -544,33 +561,151 @@ static int send_all(SOCKET sock, const char* buf, u32 len) {
 	return 0;
 }
 
-/* Read the next block of the file being streamed into `buf`. Returns the number
-   of bytes read (0 on EOF or error / when not streaming). */
-static u32 stream_next_chunk(client_context_t *ctx, char* buf, u32 buf_size) {
-	DWORD to_read;
-	DWORD got = 0;
+/* Produce the next block of an HTML directory listing into `buf`.
+ *
+ * The page is built in three phases (intro / entries / footer) so a listing of
+ * ANY length streams through one fixed buffer. We emit as many <li> rows as fit
+ * in this call; if the next row would not fit we leave it "pending" in the
+ * context and resume with it on the following call. Returns the number of bytes
+ * written, or 0 once the whole page (through the footer) has been emitted. */
+static u32 dir_stream_next(client_context_t *ctx, char* buf, u32 buf_size) {
+	/* Reserve tail room so we can always append the footer in the same chunk
+	   where the entries run out, and so a single (large) entry never overflows. */
+	const u32 tail_reserve = 64;
+	char entry[MAX_PATH + 160];
+	u32 pos = 0;
+	int n;
 
-	if (!ctx->is_streaming || ctx->stream_file == INVALID_HANDLE_VALUE ||
-	    ctx->stream_remaining == 0 || NULL == buf || buf_size == 0) {
+	if (ctx->dir_phase == DIR_PHASE_DONE) {
 		return 0;
 	}
 
-	to_read = buf_size;
-	if (to_read > ctx->stream_remaining) {
-		to_read = ctx->stream_remaining;
+	/* Phase 1: opening markup. dir_url is at most MAX_PATH, so even used twice
+	   this comfortably fits in buf_size. */
+	if (ctx->dir_phase == DIR_PHASE_INTRO) {
+		n = wsprintf(buf + pos,
+			"<html>\r\n<head><title>Index of %s</title></head>\r\n"
+			"<body>\r\n<h1>Index of %s</h1>\r\n<ul>\r\n",
+			ctx->dir_url, ctx->dir_url);
+		pos += (u32)n;
+		/* A link back to the parent, except at the document root. */
+		if (lstrcmp(ctx->dir_url, "/") != 0) {
+			n = wsprintf(buf + pos,
+				"<li><a href=\"../\">../ (parent directory)</a></li>\r\n");
+			pos += (u32)n;
+		}
+		ctx->dir_phase = DIR_PHASE_ENTRIES;
 	}
 
-	if (!ReadFile(ctx->stream_file, buf, to_read, &got, NULL) || got == 0) {
-		return 0; /* read error or unexpected EOF */
+	/* Phase 2: one <li> per directory entry, as many as fit this chunk. */
+	if (ctx->dir_phase == DIR_PHASE_ENTRIES) {
+		for (;;) {
+			BOOL have;
+
+			/* Get an entry: the one carried over from last time, or a fresh one
+			   from the enumeration. FindFirstFile already produced the first
+			   entry when the stream was set up (stored as pending). */
+			if (ctx->dir_has_pending) {
+				have = TRUE;
+			} else if (ctx->dir_find != INVALID_HANDLE_VALUE) {
+				have = FindNextFile(ctx->dir_find, &ctx->dir_pending);
+				ctx->dir_has_pending = have ? 1 : 0;
+			} else {
+				have = FALSE;
+			}
+
+			if (!have) {
+				/* Directory exhausted - move on to the footer. */
+				ctx->dir_phase = DIR_PHASE_FOOTER;
+				break;
+			}
+
+			/* Skip the "." and ".." pseudo-entries. */
+			if (lstrcmp(ctx->dir_pending.cFileName, ".") == 0 ||
+			    lstrcmp(ctx->dir_pending.cFileName, "..") == 0) {
+				ctx->dir_has_pending = 0;
+				continue;
+			}
+
+			/* Render the row. Directories get a trailing slash so the link
+			   points at their own listing; files show their size. */
+			if (ctx->dir_pending.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+				n = wsprintf(entry, "<li><a href=\"%s/\">%s/</a></li>\r\n",
+					ctx->dir_pending.cFileName, ctx->dir_pending.cFileName);
+			} else {
+				n = wsprintf(entry, "<li><a href=\"%s\">%s</a> (%u bytes)</li>\r\n",
+					ctx->dir_pending.cFileName, ctx->dir_pending.cFileName,
+					ctx->dir_pending.nFileSizeLow);
+			}
+
+			/* If the row will not fit (keeping footer room), stop here and keep
+			   it pending; the next call resends this same entry first. Because
+			   one entry is far smaller than buf_size this can never deadlock. */
+			if (pos + (u32)n > buf_size - tail_reserve) {
+				return pos;
+			}
+
+			CopyMemory(buf + pos, entry, (u32)n);
+			pos += (u32)n;
+			ctx->dir_has_pending = 0; /* consumed */
+		}
 	}
 
-	ctx->stream_remaining -= got;
-	return (u32)got;
+	/* Phase 3: closing markup. */
+	if (ctx->dir_phase == DIR_PHASE_FOOTER) {
+		n = wsprintf(buf + pos, "</ul>\r\n</body>\r\n</html>\r\n");
+		pos += (u32)n;
+		ctx->dir_phase = DIR_PHASE_DONE;
+	}
+
+	return pos;
 }
 
-/* Resolve a request to a response. On success either fills `out` with a
-   complete inline response (return 0) or with just the HTTP headers and opens
-   the file in ctx for chunked streaming (return 1). Returns -1 on failure. */
+/* Produce the next chunk of the current response body into `buf`, dispatching
+   to the right generator. Returns bytes written, or 0 when the body is fully
+   sent (or nothing is streaming). */
+static u32 stream_next_chunk(client_context_t *ctx, char* buf, u32 buf_size) {
+	if (NULL == buf || buf_size == 0) {
+		return 0;
+	}
+
+	switch (ctx->stream_kind) {
+	case STREAM_FILE: {
+		/* Read straight from the open file, capped by what's left. */
+		DWORD to_read;
+		DWORD got = 0;
+
+		if (ctx->stream_file == INVALID_HANDLE_VALUE || ctx->stream_remaining == 0) {
+			return 0;
+		}
+		to_read = buf_size;
+		if (to_read > ctx->stream_remaining) {
+			to_read = ctx->stream_remaining;
+		}
+		if (!ReadFile(ctx->stream_file, buf, to_read, &got, NULL) || got == 0) {
+			return 0; /* read error or unexpected EOF */
+		}
+		ctx->stream_remaining -= got;
+		return (u32)got;
+	}
+
+	case STREAM_DIR:
+		return dir_stream_next(ctx, buf, buf_size);
+
+	default:
+		return 0;
+	}
+}
+
+/* Resolve a request to a response. The return value tells the caller how to
+   deliver it:
+     -1  failure (caller should send a 500)
+      0  `out` holds a complete, self-contained response - just send it
+      1  `out` holds only the headers; a body follows and must be pulled with
+         stream_next_chunk() until it returns 0 (the body source - a file or the
+         directory generator - now lives in ctx).
+   Splitting "headers" from "body" is what lets files and listings of unbounded
+   size go out through one small buffer. */
 static int serve_http_request(client_context_t *ctx, struct http_request_t *req, char* out, u32 out_size, u32* out_len) {
 	char full_path[MAX_PATH];
 	char url_path[MAX_PATH];
@@ -582,10 +717,12 @@ static int serve_http_request(client_context_t *ctx, struct http_request_t *req,
 	HANDLE file_handle;
 	int path_len;
 
-	/* No file in flight yet for this request. */
-	ctx->is_streaming = 0;
+	/* Start from a clean slate: no body in flight for this request yet. */
+	ctx->stream_kind = STREAM_NONE;
 	ctx->stream_file = INVALID_HANDLE_VALUE;
 	ctx->stream_remaining = 0;
+	ctx->dir_find = INVALID_HANDLE_VALUE;
+	ctx->dir_has_pending = 0;
 
 	if (NULL == req || NULL == out || NULL == out_len || out_size == 0) {
 		return -1;
@@ -623,8 +760,7 @@ static int serve_http_request(client_context_t *ctx, struct http_request_t *req,
 	/* Handle directory */
 	if (file_attributes & FILE_ATTRIBUTE_DIRECTORY) {
 		char index_path[MAX_PATH];
-		char listing[HTTP_SEND_BUFFER_SIZE];
-		u32  listing_len = 0;
+		char pattern[MAX_PATH];
 
 		/* If the directory URL lacks a trailing slash, redirect so the browser
 		   resolves relative links (and index.html assets) against the directory
@@ -641,14 +777,28 @@ static int serve_http_request(client_context_t *ctx, struct http_request_t *req,
 			lstrcpy(full_path, index_path);
 			/* fall through to the regular-file streaming path below */
 		} else {
-			/* Otherwise generate a directory listing as an inline response. */
-			if (build_directory_listing(full_path, url_path, listing,
-				sizeof(listing) - 512, &listing_len) != 0) {
-				return build_http_error_response(500, "Cannot generate directory listing",
-					out, out_size, out_len);
+			/* Otherwise stream a directory listing generated on the fly. Its
+			   length is unknown ahead of time, so we set up the STREAM_DIR
+			   generator and send length-less headers (the generator emits the
+			   body; the connection close marks its end). */
+			if (wsprintf(pattern, "%s\\*", full_path) >= (int)sizeof(pattern)) {
+				return build_http_error_response(500, "Path too long", out, out_size, out_len);
 			}
-			return build_http_file_response(NULL, "text/html", listing, listing_len,
-				out, out_size, out_len);
+
+			/* Remember the request path for the page heading and links, then
+			   open the enumeration. FindFirstFile yields the first entry up
+			   front, which we keep as the initial "pending" item. */
+			lstrcpyn(ctx->dir_url, url_path, sizeof(ctx->dir_url));
+			ctx->dir_find = FindFirstFile(pattern, &ctx->dir_pending);
+			ctx->dir_has_pending = (ctx->dir_find != INVALID_HANDLE_VALUE) ? 1 : 0;
+			ctx->dir_phase = DIR_PHASE_INTRO;
+			ctx->stream_kind = STREAM_DIR;
+
+			if (build_http_listing_header(out, out_size, out_len) != 0) {
+				stream_close(ctx);
+				return -1;
+			}
+			return 1; /* caller sends headers, then streams the listing */
 		}
 	}
 
@@ -680,6 +830,6 @@ static int serve_http_request(client_context_t *ctx, struct http_request_t *req,
 
 	ctx->stream_file = file_handle;
 	ctx->stream_remaining = (u32)file_size;
-	ctx->is_streaming = 1;
+	ctx->stream_kind = STREAM_FILE;
 	return 1; /* caller sends headers, then streams via stream_next_chunk */
 }

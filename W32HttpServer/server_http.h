@@ -52,7 +52,7 @@ int build_http_file_response(const char* file_path, const char* mime_type, const
 int build_http_file_header(const char* mime_type, u32 file_size, char* response_buffer, u32 buffer_size, u32* header_length);
 int build_http_redirect_response(const char* location, char* response_buffer, u32 buffer_size, u32* response_length);
 int build_http_error_response(int status_code, const char* message, char* response_buffer, u32 buffer_size, u32* response_length);
-int build_directory_listing(const char* dir_path, const char* url_path, char* html_buffer, u32 buffer_size, u32* html_length);
+int build_http_listing_header(char* response_buffer, u32 buffer_size, u32* header_length);
 void url_decode(const char* src, char* dest, u32 dest_size);
 int is_safe_path(const char* path);
 int resolve_file_path(const char* document_root, const char* url_path, char* full_path, u32 path_buffer_size);

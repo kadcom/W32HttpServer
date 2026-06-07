@@ -575,82 +575,35 @@ int resolve_file_path(const char* document_root, const char* url_path, char* ful
     return 0;
 }
 
-int build_directory_listing(const char* dir_path, const char* url_path, char* html_buffer, u32 buffer_size, u32* html_length) {
-    WIN32_FIND_DATA find_data;
-    HANDLE find_handle;
-    char search_pattern[MAX_PATH];
-    char html_entry[512];
-    int html_pos;
-    int entry_len;
-    
-    if (NULL == dir_path || NULL == url_path || NULL == html_buffer || NULL == html_length || buffer_size == 0) {
+/* Build the response headers for a streamed directory listing.
+ *
+ * Unlike a file, a generated listing has no length we can know in advance
+ * without walking the whole directory first. Rather than buffer the entire
+ * page (which would re-introduce the size cap we are trying to remove), we
+ * deliberately OMIT Content-Length and rely on "Connection: close" to mark the
+ * end of the body: the server streams the HTML and then closes the socket, and
+ * the client reads until end-of-stream. This is the classic HTTP/1.0 way of
+ * delivering dynamic content and works with every client from Win95 onward.
+ * The actual <li> rows are produced incrementally by the directory generator
+ * in server_win32.c. */
+int build_http_listing_header(char* response_buffer, u32 buffer_size, u32* header_length) {
+    int len;
+
+    if (NULL == response_buffer || NULL == header_length || buffer_size == 0) {
         return -1;
     }
-    
-    /* Build search pattern */
-    if (wsprintf(search_pattern, "%s\\*", dir_path) >= sizeof(search_pattern)) {
+
+    len = wsprintf(response_buffer,
+        "HTTP/1.0 200 OK\r\n"
+        "Content-Type: text/html\r\n"
+        "Connection: close\r\n"   /* no Content-Length: body ends when we close */
+        "\r\n");
+
+    if (len < 0 || (u32)len >= buffer_size) {
         return -1;
     }
-    
-    /* Start HTML */
-    html_pos = wsprintf(html_buffer,
-        "<html><head><title>Directory listing for %s</title></head>\n"
-        "<body><h1>Directory listing for %s</h1>\n<ul>\n",
-        url_path, url_path);
-    
-    if (html_pos < 0 || (u32)html_pos >= buffer_size) {
-        return -1;
-    }
-    
-    /* Add parent directory link if not root */
-    if (lstrcmp(url_path, "/") != 0) {
-        entry_len = wsprintf(html_entry, 
-            "<li><a href=\"../\">[Parent Directory]</a></li>\n");
-        if (entry_len > 0 && (u32)(html_pos + entry_len) < buffer_size) {
-            lstrcpy(html_buffer + html_pos, html_entry);
-            html_pos += entry_len;
-        }
-    }
-    
-    /* Find files and directories */
-    find_handle = FindFirstFile(search_pattern, &find_data);
-    if (find_handle != INVALID_HANDLE_VALUE) {
-        do {
-            /* Skip . and .. */
-            if (lstrcmp(find_data.cFileName, ".") == 0 || lstrcmp(find_data.cFileName, "..") == 0) {
-                continue;
-            }
-            
-            /* Create HTML entry */
-            if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                entry_len = wsprintf(html_entry,
-                    "<li><a href=\"%s/\">[DIR] %s</a></li>\n",
-                    find_data.cFileName, find_data.cFileName);
-            } else {
-                entry_len = wsprintf(html_entry,
-                    "<li><a href=\"%s\">%s</a> (%u bytes)</li>\n",
-                    find_data.cFileName, find_data.cFileName, find_data.nFileSizeLow);
-            }
-            
-            /* Add entry if it fits */
-            if (entry_len > 0 && (u32)(html_pos + entry_len) < buffer_size - 50) {
-                lstrcpy(html_buffer + html_pos, html_entry);
-                html_pos += entry_len;
-            }
-            
-        } while (FindNextFile(find_handle, &find_data));
-        
-        FindClose(find_handle);
-    }
-    
-    /* Close HTML */
-    entry_len = wsprintf(html_entry, "</ul></body></html>");
-    if (entry_len > 0 && (u32)(html_pos + entry_len) < buffer_size) {
-        lstrcpy(html_buffer + html_pos, html_entry);
-        html_pos += entry_len;
-    }
-    
-    *html_length = (u32)html_pos;
+
+    *header_length = (u32)len;
     return 0;
 }
 
