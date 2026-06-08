@@ -20,11 +20,12 @@ extern HWND g_request_log_window;
 extern volatile LONG g_is_server_run;
 extern SOCKET ssocket;
 
-/* Non-zero once OleInitialize() has succeeded for the process. The shell's
-   "new style" folder browser (BIF_NEWDIALOGSTYLE) requires COM to be
-   initialised; on old Win9x shells where it is not, we fall back to the
-   classic browser instead. Set by WinMain, read by the folder picker. */
-extern BOOL g_ole_available;
+/* The folder picker resolves shell32/ole32 at run time rather than linking
+   them, so the executable carries no load-time dependency on either DLL.
+   Call folder_picker_init() once at startup (resolves the entry points and
+   initialises COM) and folder_picker_shutdown() once at exit. */
+void folder_picker_init(void);
+void folder_picker_shutdown(void);
 
 /* Window Message to send to main thread */
 

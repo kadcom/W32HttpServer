@@ -11,6 +11,80 @@
 #define BIF_NEWDIALOGSTYLE 0x0040
 #endif
 
+/* ---------------------------------------------------------------------------
+ * Runtime resolution of the shell / OLE entry points.
+ *
+ * Rather than link shell32.dll and ole32.dll (which would make the loader
+ * refuse to start the program if either were missing an expected export), we
+ * load them with LoadLibrary and look the functions up with GetProcAddress.
+ * The folder picker then works only if the lookups succeed, and the rest of
+ * the program is unaffected. This mirrors how the IOCP path already resolves
+ * AcceptEx at run time, and keeps the link line free of extra dependencies.
+ * ------------------------------------------------------------------------- */
+typedef HRESULT      (WINAPI *PFN_OleInitialize)(LPVOID);
+typedef void         (WINAPI *PFN_OleUninitialize)(void);
+typedef LPITEMIDLIST (WINAPI *PFN_SHBrowseForFolder)(LPBROWSEINFO);
+typedef BOOL         (WINAPI *PFN_SHGetPathFromIDList)(LPCITEMIDLIST, LPSTR);
+typedef HRESULT      (WINAPI *PFN_SHGetMalloc)(LPMALLOC *);
+
+static HMODULE g_ole32_module   = NULL;
+static HMODULE g_shell32_module = NULL;
+
+static PFN_OleInitialize       pfn_OleInitialize       = NULL;
+static PFN_OleUninitialize     pfn_OleUninitialize     = NULL;
+static PFN_SHBrowseForFolder   pfn_SHBrowseForFolder   = NULL;
+static PFN_SHGetPathFromIDList pfn_SHGetPathFromIDList = NULL;
+static PFN_SHGetMalloc         pfn_SHGetMalloc         = NULL;
+
+/* Non-zero once OleInitialize() has actually succeeded; gates the use of the
+   "new style" browser, which needs COM running. */
+static BOOL g_ole_available = FALSE;
+
+void folder_picker_init(void) {
+	/* ole32: COM init for the new-style dialog (optional enhancement). */
+	g_ole32_module = LoadLibrary("ole32.dll");
+	if (g_ole32_module != NULL) {
+		pfn_OleInitialize   = (PFN_OleInitialize)   GetProcAddress(g_ole32_module, "OleInitialize");
+		pfn_OleUninitialize = (PFN_OleUninitialize) GetProcAddress(g_ole32_module, "OleUninitialize");
+	}
+
+	/* shell32: the folder browser itself. Try the explicit ANSI export names,
+	   falling back to the undecorated names some early Win9x shells used. */
+	g_shell32_module = LoadLibrary("shell32.dll");
+	if (g_shell32_module != NULL) {
+		pfn_SHBrowseForFolder = (PFN_SHBrowseForFolder) GetProcAddress(g_shell32_module, "SHBrowseForFolderA");
+		if (pfn_SHBrowseForFolder == NULL) {
+			pfn_SHBrowseForFolder = (PFN_SHBrowseForFolder) GetProcAddress(g_shell32_module, "SHBrowseForFolder");
+		}
+		pfn_SHGetPathFromIDList = (PFN_SHGetPathFromIDList) GetProcAddress(g_shell32_module, "SHGetPathFromIDListA");
+		if (pfn_SHGetPathFromIDList == NULL) {
+			pfn_SHGetPathFromIDList = (PFN_SHGetPathFromIDList) GetProcAddress(g_shell32_module, "SHGetPathFromIDList");
+		}
+		pfn_SHGetMalloc = (PFN_SHGetMalloc) GetProcAddress(g_shell32_module, "SHGetMalloc");
+	}
+
+	/* Bring COM up only if we found OleInitialize. Remember success so we can
+	   request the new dialog style and balance with OleUninitialize at exit. */
+	if (pfn_OleInitialize != NULL && SUCCEEDED(pfn_OleInitialize(NULL))) {
+		g_ole_available = TRUE;
+	}
+}
+
+void folder_picker_shutdown(void) {
+	if (g_ole_available && pfn_OleUninitialize != NULL) {
+		pfn_OleUninitialize();
+		g_ole_available = FALSE;
+	}
+	if (g_shell32_module != NULL) {
+		FreeLibrary(g_shell32_module);
+		g_shell32_module = NULL;
+	}
+	if (g_ole32_module != NULL) {
+		FreeLibrary(g_ole32_module);
+		g_ole32_module = NULL;
+	}
+}
+
 LRESULT on_initialise(HWND window, HINSTANCE current_instance);
 LRESULT on_start_click(HWND window, HWND button);
 LRESULT on_folder_select_click(HWND window, HWND button);
@@ -334,9 +408,19 @@ LRESULT on_folder_select_click(HWND window, HWND button) {
 	char selected_path[MAX_PATH];
 	HWND folder_edit;
 	
+	/* The browser and the path-extraction call are essential; if either could
+	   not be resolved at startup there is no way to pick a folder, so say so
+	   instead of crashing on a NULL function pointer. */
+	if (pfn_SHBrowseForFolder == NULL || pfn_SHGetPathFromIDList == NULL) {
+		MessageBox(window,
+			"Folder browsing is not available on this system (shell32 could not "
+			"be loaded).", "Folder Picker Unavailable", MB_ICONWARNING | MB_OK);
+		return 0;
+	}
+
 	ZeroMemory(&browse_info, sizeof(BROWSEINFO));
 	ZeroMemory(selected_path, sizeof(selected_path));
-	
+
 	browse_info.hwndOwner = window;
 	browse_info.pszDisplayName = selected_path;
 	browse_info.lpszTitle = "Select folder to serve:";
@@ -348,10 +432,10 @@ LRESULT on_folder_select_click(HWND window, HWND button) {
 		browse_info.ulFlags |= BIF_NEWDIALOGSTYLE;
 	}
 
-	item_id_list = SHBrowseForFolder(&browse_info);
-	
+	item_id_list = pfn_SHBrowseForFolder(&browse_info);
+
 	if (item_id_list != NULL) {
-		if (SHGetPathFromIDList(item_id_list, selected_path)) {
+		if (pfn_SHGetPathFromIDList(item_id_list, selected_path)) {
 			/* Update the folder edit control */
 			folder_edit = GetDlgItem(window, IDC_FOLDER_EDIT);
 			if (folder_edit != NULL) {
@@ -360,16 +444,18 @@ LRESULT on_folder_select_click(HWND window, HWND button) {
 				lstrcpy(g_document_root, selected_path);
 			}
 		}
-		
-		/* Free the memory allocated by SHBrowseForFolder */
-		{
+
+		/* Free the PIDL the shell allocated for us. If SHGetMalloc could not be
+		   resolved we simply skip the free (a tiny one-time leak) rather than
+		   risk calling through a NULL pointer. */
+		if (pfn_SHGetMalloc != NULL) {
 			LPMALLOC malloc_interface;
-			if (SUCCEEDED(SHGetMalloc(&malloc_interface))) {
+			if (SUCCEEDED(pfn_SHGetMalloc(&malloc_interface))) {
 				malloc_interface->lpVtbl->Free(malloc_interface, item_id_list);
 				malloc_interface->lpVtbl->Release(malloc_interface);
 			}
 		}
 	}
-	
+
 	return 0;
 }

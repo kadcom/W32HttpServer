@@ -10,9 +10,6 @@ static const int g_main_height = 370;
 HFONT g_sans_font = NULL, g_mono_font = NULL;
 HWND g_main_window = NULL;
 
-/* Whether COM was successfully initialised for this process (see header). */
-BOOL g_ole_available = FALSE;
-
 int WINAPI WinMain(HINSTANCE current_instance, 
 				   HINSTANCE previous_instance, 
 				   LPSTR cmd_line, 
@@ -40,13 +37,10 @@ int WINAPI WinMain(HINSTANCE current_instance,
 	// Initialising common controls, this will apply themes if you're using Windows XP.
 	InitCommonControls();
 
-	// Initialise COM for the process. The shell folder browser uses the "new
-	// style" dialog (BIF_NEWDIALOGSTYLE), which is only available when COM has
-	// been initialised. On old Win9x shells this may fail or be a no-op; we
-	// remember the result so the folder picker can fall back to the classic
-	// browser rather than misbehave. OleInitialize (not just CoInitialize) is
-	// what the shell documents as the requirement here.
-	g_ole_available = SUCCEEDED(OleInitialize(NULL));
+	// Resolve the shell/OLE entry points the folder picker needs (shell32 and
+	// ole32 are loaded at run time, not linked) and initialise COM. Safe to
+	// call even if those DLLs are unavailable - the picker just disables itself.
+	folder_picker_init();
 
 	// Loading resources
 	app_icon			= LoadIcon(current_instance, MAKEINTRESOURCE(IDI_HTTP));
@@ -143,10 +137,8 @@ end:
 		UnregisterClass(g_main_window_class_name, current_instance);
 	}
 
-	// Balance the OleInitialize above (only if it actually succeeded).
-	if (g_ole_available) {
-		OleUninitialize();
-	}
+	// Balance folder_picker_init(): uninitialise COM and free the loaded DLLs.
+	folder_picker_shutdown();
 
 	return (int)msg.wParam;
 }
