@@ -3,6 +3,14 @@
 #include "server.h"
 #include <shlobj.h>
 
+/* Old SDK headers (Watcom, VC6 without updated Platform SDK) predate the
+   "new style" folder browser and do not define this flag. Define it ourselves
+   so the code still builds there; at run time we only actually request it when
+   COM is available (see on_folder_select_click). */
+#ifndef BIF_NEWDIALOGSTYLE
+#define BIF_NEWDIALOGSTYLE 0x0040
+#endif
+
 LRESULT on_initialise(HWND window, HINSTANCE current_instance);
 LRESULT on_start_click(HWND window, HWND button);
 LRESULT on_folder_select_click(HWND window, HWND button);
@@ -332,8 +340,14 @@ LRESULT on_folder_select_click(HWND window, HWND button) {
 	browse_info.hwndOwner = window;
 	browse_info.pszDisplayName = selected_path;
 	browse_info.lpszTitle = "Select folder to serve:";
-	browse_info.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-	
+	/* Always restrict the result to real file-system directories. Only ask for
+	   the modern dialog when COM is up; on an old Win9x shell without it we use
+	   the classic browser, which is always available. */
+	browse_info.ulFlags = BIF_RETURNONLYFSDIRS;
+	if (g_ole_available) {
+		browse_info.ulFlags |= BIF_NEWDIALOGSTYLE;
+	}
+
 	item_id_list = SHBrowseForFolder(&browse_info);
 	
 	if (item_id_list != NULL) {

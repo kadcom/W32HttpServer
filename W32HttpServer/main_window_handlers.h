@@ -20,6 +20,12 @@ extern HWND g_request_log_window;
 extern volatile LONG g_is_server_run;
 extern SOCKET ssocket;
 
+/* Non-zero once OleInitialize() has succeeded for the process. The shell's
+   "new style" folder browser (BIF_NEWDIALOGSTYLE) requires COM to be
+   initialised; on old Win9x shells where it is not, we fall back to the
+   classic browser instead. Set by WinMain, read by the folder picker. */
+extern BOOL g_ole_available;
+
 /* Window Message to send to main thread */
 
 #define W32HTTP_SERVERLOG	(WM_USER + 1)
