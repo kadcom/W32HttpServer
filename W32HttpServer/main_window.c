@@ -10,6 +10,31 @@ static const int g_main_height = 370;
 HFONT g_sans_font = NULL, g_mono_font = NULL;
 HWND g_main_window = NULL;
 
+/* Opt into DPI awareness so Windows renders our own drawing crisply instead of
+   bitmap-stretching a 96-DPI window (which looks blurry on high-DPI displays).
+   Resolved at run time: per-monitor v2 on Win10 1703+, system-DPI on Vista+,
+   and a no-op on older Windows. Must run before any window is created. */
+static void enable_dpi_awareness(void) {
+	HMODULE user32 = GetModuleHandle("user32.dll");
+	typedef BOOL (WINAPI *PFN_SetCtx)(HANDLE);
+	typedef BOOL (WINAPI *PFN_SetAware)(void);
+	PFN_SetCtx   set_ctx;
+	PFN_SetAware set_aware;
+
+	if (user32 == NULL) {
+		return;
+	}
+	/* DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 == (HANDLE)-4 */
+	set_ctx = (PFN_SetCtx) GetProcAddress(user32, "SetProcessDpiAwarenessContext");
+	if (set_ctx != NULL && set_ctx((HANDLE) -4)) {
+		return;
+	}
+	set_aware = (PFN_SetAware) GetProcAddress(user32, "SetProcessDPIAware");
+	if (set_aware != NULL) {
+		set_aware();
+	}
+}
+
 int WINAPI WinMain(HINSTANCE current_instance, 
 				   HINSTANCE previous_instance, 
 				   LPSTR cmd_line, 
@@ -29,6 +54,10 @@ int WINAPI WinMain(HINSTANCE current_instance,
 
 	// The window title will be loaded from string table instead of being hard-coded
 	char main_window_title[64] = {0};
+
+	// Declare DPI awareness before creating any window, so high-DPI displays
+	// get crisp rendering rather than a stretched 96-DPI bitmap.
+	enable_dpi_awareness();
 
 	// Zeroing out structures, so we don't need to assign 0 or NULL
 	ZeroMemory(&wcex, sizeof(WNDCLASSEX));
