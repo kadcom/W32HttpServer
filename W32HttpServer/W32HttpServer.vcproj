@@ -198,6 +198,14 @@
 				RelativePath=".\server_win32.c"
 				>
 			</File>
+			<File
+				RelativePath=".\platform_detect.c"
+				>
+			</File>
+			<File
+				RelativePath=".\thread_pool.c"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Header Files"
@@ -226,6 +234,14 @@
 			</File>
 			<File
 				RelativePath=".\server_http.h"
+				>
+			</File>
+			<File
+				RelativePath=".\platform_detect.h"
+				>
+			</File>
+			<File
+				RelativePath=".\thread_pool.h"
 				>
 			</File>
 		</Filter>

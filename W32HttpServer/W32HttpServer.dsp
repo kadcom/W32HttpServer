@@ -121,6 +121,14 @@ SOURCE=.\main_window_handlers.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\platform_detect.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\platform_detect.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\resource.h
 # End Source File
 # Begin Source File
@@ -138,6 +146,14 @@ SOURCE=.\server_http.h
 # Begin Source File
 
 SOURCE=.\server_win32.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\thread_pool.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\thread_pool.h
 # End Source File
 # Begin Source File
 
